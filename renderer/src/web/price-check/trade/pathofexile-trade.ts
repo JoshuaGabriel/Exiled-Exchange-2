@@ -29,7 +29,6 @@ import { ModifierType } from "@/parser/modifiers";
 import { Cache } from "./Cache";
 import { filterInPseudo } from "../filters/pseudo";
 import { parseAffixStrings } from "@/parser/Parser";
-import { rand } from "@vueuse/core";
 
 export const CATEGORY_TO_TRADE_ID = new Map([
   [ItemCategory.Map, "map"],
@@ -104,6 +103,19 @@ export const CATEGORY_TO_TRADE_ID = new Map([
 //   [ItemInfluence.Warlord]: 'Has Warlord Influence'
 // }
 
+const CONVERT_CURRENCY: Record<string, string> = {
+  "greater-orb-of-transmutation": "G. transmute",
+  "perfect-orb-of-transmutation": "P. transmute",
+  "greater-orb-of-augmentation": "G. aug",
+  "perfect-orb-of-augmentation": "P. aug",
+  "greater-chaos-orb": "G. chaos",
+  "perfect-chaos-orb": "P. chaos",
+  "greater-regal-orb": "G. regal",
+  "perfect-regal-orb": "P. regal",
+  "greater-exalted-orb": "G. exalted",
+  "perfect-exalted-orb": "P. exalted",
+};
+
 interface FilterBoolean {
   option?: "true" | "false";
 }
@@ -115,7 +127,7 @@ interface FilterRange {
 interface TradeRequest {
   /* eslint-disable camelcase */
   query: {
-    status: { option: "online" | "onlineleague" | "any" };
+    status: { option: "available" | "securable" | "online" | "any" };
     name?: string | { discriminator: string; option: string };
     type?: string | { discriminator: string; option: string };
     stats: Array<{
@@ -257,6 +269,7 @@ interface FetchResult {
   };
   listing: {
     indexed: string;
+    fee?: number;
     price?: {
       amount: number;
       currency: string;
@@ -289,7 +302,7 @@ export interface PricingResult {
   priceCurrencyRank?: number;
   isMine: boolean;
   hasNote: boolean;
-  isMerchant: boolean;
+  isInstantBuyout: boolean;
   accountName: string;
   accountStatus: "offline" | "online" | "afk";
   ign: string;
@@ -305,11 +318,7 @@ export function createTradeRequest(
   const body: TradeRequest = {
     query: {
       status: {
-        option:
-          filters.trade.listingType === "merchant"
-            ? // FIXME: Set to correct account status here
-              "online"
-            : filters.trade.listingType,
+        option: filters.trade.listingType,
       },
       stats: [{ type: "and", filters: [] }],
       filters: {},
@@ -319,11 +328,6 @@ export function createTradeRequest(
     },
   };
   const { query } = body;
-
-  if (filters.trade.listingType === "merchant") {
-    // FIXME: actually do something
-    console.log("do something cause merchant");
-  }
 
   if (filters.trade.currency) {
     propSet(
@@ -1011,9 +1015,17 @@ export async function requestResults(
     };
 
     let priceCurrencyRank: PricingResult["priceCurrencyRank"];
-    // FIXME: Find a way to determine the price rank
-    if (rand(0, 2) === 0) {
-      priceCurrencyRank = rand(0, 2) ? 3 : 2;
+    if (
+      result.listing.price?.currency &&
+      result.listing.price.currency in CONVERT_CURRENCY
+    ) {
+      result.listing.price.currency =
+        CONVERT_CURRENCY[result.listing.price.currency];
+      if (result.listing.price.currency[0] === "G") {
+        priceCurrencyRank = 2;
+      } else if (result.listing.price.currency[0] === "P") {
+        priceCurrencyRank = 3;
+      }
     }
 
     return {
@@ -1037,8 +1049,7 @@ export async function requestResults(
       priceCurrencyRank,
       hasNote: result.item.note != null,
       isMine: result.listing.account.name === opts.accountName,
-      // FIXME: actually calc this
-      isMerchant: rand(0, 2) !== 0,
+      isInstantBuyout: result.listing.fee != null,
       ign: result.listing.account.lastCharacterName,
       accountName: result.listing.account.name,
       accountStatus: result.listing.account.online

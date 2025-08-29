@@ -13,8 +13,8 @@
           ><i class="fas fa-history"></i>
           {{
             t(
-              filters.trade.listingType === "merchant"
-                ? "Merchant"
+              filters.trade.listingType === "securable"
+                ? "Instant Buyout"
                 : filters.trade.listingType === "any"
                   ? "Offline"
                   : "Online",
@@ -27,16 +27,11 @@
     <template #content>
       <div class="flex gap-x-8 p-2 bg-gray-800 text-gray-400">
         <div class="flex flex-col gap-y-1">
-          <!-- <div class="mb-1">
-            <ui-toggle v-model="filters.trade.merchant">{{
-              t("Merchant Only")
-            }}</ui-toggle>
-          </div> -->
-          <!-- <ui-radio v-model="filters.trade.listingType" value="merchant">{{
-            t("Merchant Only")
-          }}</ui-radio> -->
-          <ui-radio v-model="filters.trade.listingType" value="onlineleague">{{
-            t(":in_league_toggle")
+          <ui-radio v-model="filters.trade.listingType" value="available">{{
+            t("Instant or Online")
+          }}</ui-radio>
+          <ui-radio v-model="filters.trade.listingType" value="securable">{{
+            t("Instant Buyout")
           }}</ui-radio>
           <ui-radio v-model="filters.trade.listingType" value="online">{{
             t("Online")
@@ -72,13 +67,6 @@
           </template>
         </div>
         <div class="flex flex-col gap-y-1">
-          <!-- <div class="mb-1">
-            <ui-toggle
-              :class="{ invisible: filters.trade.offline }"
-              v-model="filters.trade.onlineInLeague"
-              >{{ t(":in_league_toggle") }}</ui-toggle
-            >
-          </div> -->
           <ui-radio
             v-for="league of tradeLeagues"
             :key="league.id"

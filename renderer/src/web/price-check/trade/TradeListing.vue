@@ -29,6 +29,9 @@
             <th class="trade-table-heading">
               <div class="px-2">{{ t(":price") }}</div>
             </th>
+            <!-- <th class="trade-table-heading">
+              <div class="px-2">{{ t(":rank") }}</div>
+            </th> -->
             <th v-if="item.stackSize" class="trade-table-heading">
               <div class="px-2">{{ t(":stock") }}</div>
             </th>
@@ -271,7 +274,7 @@ export default defineComponent({
   height: 0.375rem;
   border-radius: 100%;
 
-  &.merchant {
+  &.instantBuyout {
     /* */
   }
 

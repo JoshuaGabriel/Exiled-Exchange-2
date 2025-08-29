@@ -18,6 +18,18 @@
         ><span class="font-sans">×</span> {{ result.listedTimes }}</span
       ><i v-else-if="!result.hasNote" class="fas fa-question" />
     </td>
+    <!-- <td class="px-2">
+      <div v-if="result.priceCurrencyRank" class="my-2 flex flex-row">
+        <div
+          v-for="i in result.priceCurrencyRank"
+          class="account-status mr-1"
+          :class="{
+            'rank-2': result.priceCurrencyRank === 2,
+            'rank-3': result.priceCurrencyRank === 3,
+          }"
+        ></div>
+      </div>
+    </td> -->
     <td v-if="item.stackSize" class="px-2 text-right">
       {{ result.stackSize }}
     </td>
@@ -47,15 +59,10 @@
     </td>
     <td class="pr-2 pl-4 whitespace-nowrap">
       <div class="inline-flex items-center">
-        <!-- FIXME: Change to merchant to be merchant/instantBuyout -->
         <div
           class="account-status"
           :class="
-            result.isMerchant
-              ? 'merchant'
-              : result.accountStatus === 'online'
-                ? 'merchant'
-                : result.accountStatus
+            result.isInstantBuyout ? 'instantBuyout' : result.accountStatus
           "
         ></div>
         <div class="ml-1 font-sans text-xs">
