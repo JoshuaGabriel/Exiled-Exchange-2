@@ -9,8 +9,7 @@ import { ApiResponse } from './types/api';
 import itemRoutes from './routes/items';
 
 const app = express();
-// hardcode for now
-const PORT = 3210;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(helmet({
   contentSecurityPolicy: false,
