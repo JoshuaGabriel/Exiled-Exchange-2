@@ -40,10 +40,10 @@
       <!-- Item Name and Basic Info -->
       <div class="mb-4">
         <h3 class="text-lg font-semibold text-gray-200">
-          {{ priceData.itemName || item.name }}
+          {{ priceData.itemName || item.info.name }}
         </h3>
         <div class="text-sm text-gray-400">
-          {{ priceData.baseType || item.baseType }}
+          {{ priceData.baseType || item.info.refName }}
           <span v-if="priceData.category" class="ml-2">
             ({{ priceData.category }})
           </span>

@@ -394,10 +394,21 @@ export default defineComponent({
       // Return a temporary loading state
       return ok({
         rawText: e.clipboard,
-        name: "Loading...",
-        baseType: "",
-        category: ItemCategory.Unknown,
-        rarity: ItemRarity.Unknown,
+        isUnidentified: false,
+        isCorrupted: false,
+        influences: [],
+        statsByType: [],
+        newMods: [],
+        unknownModifiers: [],
+        category: ItemCategory.Currency,
+        rarity: ItemRarity.Normal,
+        info: {
+          refName: 'Unknown',
+          name: 'Loading...',
+          namespace: 'ITEM' as const,
+          icon: '',
+          tags: []
+        }
       } as ParsedItem);
     }
 
