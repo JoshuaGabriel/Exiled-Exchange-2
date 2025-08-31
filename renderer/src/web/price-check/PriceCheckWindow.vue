@@ -161,13 +161,13 @@ import { Result, ok, err } from "neverthrow";
 import { useI18n } from "vue-i18n";
 import UiErrorBox from "@/web/ui/UiErrorBox.vue";
 import UiPopover from "@/web/ui/Popover.vue";
-import CheckedItem from "./CheckedItem.vue";
+import CheckedItem from "./RestApiCheckedItem.vue";
 import BackgroundInfo from "./BackgroundInfo.vue";
 import { MainProcess, Host } from "@/web/background/IPC";
 import { usePoeninja } from "../background/Prices";
-import { useLeagues } from "@/web/background/Leagues";
+import { useLeagues } from "@/web/background/RestApiLeagues";
 import { AppConfig } from "@/web/Config";
-import { ItemCategory, ItemRarity, parseClipboard, ParsedItem } from "@/parser";
+import { ItemCategory, ItemRarity, ParsedItem } from "@/parser";
 import RelatedItems from "./related-items/RelatedItems.vue";
 import RateLimiterState from "./trade/RateLimiterState.vue";
 import UnidentifiedResolver from "./unidentified-resolver/UnidentifiedResolver.vue";
@@ -190,6 +190,7 @@ import {
 import { translatedEffectsPseudos } from "./filters/pseudo";
 import { ItemEditorType } from "@/parser/meta";
 import { getItemEditorType } from "./filters/util";
+import { restApiClient } from "@/web/api/RestApiClient";
 
 type ParseError = {
   name: string;
@@ -333,23 +334,71 @@ export default defineComponent({
     });
 
     function handleItemPaste(e: { clipboard: string; item: any }) {
-      const newItem = (
-        e.item ? ok(e.item as ParsedItem) : parseClipboard(e.clipboard)
-      )
-        .andThen((item) =>
-          (item.category === ItemCategory.HeistContract &&
-            item.rarity !== ItemRarity.Unique) ||
-          (item.category === ItemCategory.Sentinel &&
-            item.rarity !== ItemRarity.Unique)
-            ? err("item.unknown")
-            : ok(item),
-        )
-        .mapErr((err) => ({
-          name: `${err}`,
-          message: `${err}_help`,
-          rawText: e.clipboard,
-        }));
-      return newItem;
+      // If we already have a parsed item, use it directly
+      if (e.item) {
+        const newItem = ok(e.item as ParsedItem)
+          .andThen((item) =>
+            (item.category === ItemCategory.HeistContract &&
+              item.rarity !== ItemRarity.Unique) ||
+            (item.category === ItemCategory.Sentinel &&
+              item.rarity !== ItemRarity.Unique)
+              ? err("item.unknown")
+              : ok(item),
+          )
+          .mapErr((err) => ({
+            name: `${err}`,
+            message: `${err}_help`,
+            rawText: e.clipboard,
+          }));
+        return newItem;
+      }
+
+      // Use REST API to parse the clipboard text
+      restApiClient.parseItem({ itemText: e.clipboard })
+        .then((parseResult) => {
+          if (parseResult.isOk()) {
+            const parsedItem = parseResult.value;
+            // Apply the same validation as before
+            if ((parsedItem.category === ItemCategory.HeistContract &&
+                 parsedItem.rarity !== ItemRarity.Unique) ||
+                (parsedItem.category === ItemCategory.Sentinel &&
+                 parsedItem.rarity !== ItemRarity.Unique)) {
+              item.value = err({
+                name: "item.unknown",
+                message: "item.unknown_help",
+                rawText: e.clipboard,
+              });
+            } else {
+              item.value = ok(parsedItem);
+              if (item.value.isOk()) {
+                queuePricesFetch();
+              }
+            }
+          } else {
+            item.value = err({
+              name: "item.parse_error",
+              message: parseResult.error,
+              rawText: e.clipboard,
+            });
+          }
+        })
+        .catch((error) => {
+          console.error("REST API parse error:", error);
+          item.value = err({
+            name: "api.connection_error",
+            message: "Failed to connect to price check service",
+            rawText: e.clipboard,
+          });
+        });
+
+      // Return a temporary loading state
+      return ok({
+        rawText: e.clipboard,
+        name: "Loading...",
+        baseType: "",
+        category: ItemCategory.Unknown,
+        rarity: ItemRarity.Unknown,
+      } as ParsedItem);
     }
 
     function handleIdentification(identified: ParsedItem) {

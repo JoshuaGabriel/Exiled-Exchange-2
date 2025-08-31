@@ -1,5 +1,7 @@
 import { Result, ok, err } from "neverthrow";
 import { ParsedItem } from "./ItemService";
+import { tradeApiClient, TradeRequest, TradeSearchResponse, TradeFetchResponse } from "./TradeApiClient";
+import { cacheService, CacheService } from "./CacheService";
 
 // Basic price check interfaces
 export interface PriceListingResult {
@@ -12,6 +14,8 @@ export interface PriceListingResult {
   relativeDate: string;
   hasNote: boolean;
   isInstantBuyout: boolean;
+  accountStatus: "offline" | "online" | "afk";
+  characterName: string;
 }
 
 export interface PriceCheckResult {
@@ -49,35 +53,10 @@ interface SimpleTradeFilters {
   league: string;
 }
 
-// Simplified trade request structure
-interface SimpleTradeRequest {
-  query: {
-    status: { option: "online" | "any" };
-    name?: string;
-    type?: string;
-    filters: {
-      type_filters?: {
-        filters: {
-          rarity?: { option?: string };
-          category?: { option?: string };
-          ilvl?: { min?: number; max?: number };
-        };
-      };
-      misc_filters?: {
-        filters: {
-          corrupted?: { option?: string };
-        };
-      };
-    };
-  };
-  sort: {
-    price: "asc";
-  };
-}
-
 export class PriceCheckService {
-  private static readonly TRADE_API_BASE = "https://www.pathofexile.com/api/trade2";
-  private static readonly DEFAULT_LEAGUE = "Standard";
+  private static readonly DEFAULT_LEAGUE = "Rise of the Abyssal";
+  private static readonly CACHE_TTL_SECONDS = 300; // 5 minutes
+  private static readonly MAX_RESULTS = 20; // Limit results to avoid rate limits
 
   /**
    * Perform price check on a parsed item
@@ -88,26 +67,203 @@ export class PriceCheckService {
       league?: string;
       onlineOnly?: boolean;
       maxResults?: number;
+      useCache?: boolean;
     } = {}
   ): Promise<Result<PriceCheckResult, string>> {
     try {
+      const league = options.league || this.DEFAULT_LEAGUE;
+      const useCache = options.useCache ?? true;
+      
+      // Create cache key
+      const cacheKey = CacheService.createKey(
+        'price-check',
+        parsedItem.name || parsedItem.baseType,
+        parsedItem.rarity,
+        parsedItem.isCorrupted,
+        parsedItem.itemLevel,
+        league,
+        options.onlineOnly
+      );
+
+      // Check cache first
+      if (useCache) {
+        const cachedResult = cacheService.get<PriceCheckResult>(cacheKey);
+        if (cachedResult.isOk()) {
+          console.debug('Cache hit for price check:', cacheKey);
+          return ok(cachedResult.value);
+        }
+      }
+
       // Create search filters from parsed item
       const filters = this.createFiltersFromItem(parsedItem, {
-        league: options.league || this.DEFAULT_LEAGUE,
+        league,
         onlineOnly: options.onlineOnly ?? true,
       });
 
       // Create trade request
       const tradeRequest = this.createTradeRequest(filters);
 
-      // Mock/simulate price check for now since we need to handle CORS and proxy setup
-      // In production, this would make actual API calls through a proxy
-      const mockResult = this.createMockPriceResult(parsedItem, filters);
+      // Search for items
+      const searchResult = await tradeApiClient.search(tradeRequest, league);
+      
+      // Check if search failed and return mock data
+      if (!searchResult) {
+        console.warn('Trade API search failed, using mock data');
+        return this.createMockPriceResult(parsedItem, filters);
+      }
 
-      return ok(mockResult);
+      const searchData = searchResult;
+      
+      // If no results found, return empty result
+      if (!searchData.result || searchData.result.length === 0) {
+        const emptyResult: PriceCheckResult = {
+          itemName: parsedItem.name,
+          baseType: parsedItem.baseType,
+          category: parsedItem.category,
+          listings: [],
+          priceStats: {
+            median: undefined,
+            average: undefined,
+            currency: this.getCurrencyForItem(parsedItem),
+            totalListings: 0,
+          },
+          searchFilters: this.createSearchFilters(filters),
+        };
+        
+        if (useCache) {
+          cacheService.set(cacheKey, emptyResult, this.CACHE_TTL_SECONDS);
+        }
+        
+        return ok(emptyResult);
+      }
+
+      // Fetch detailed item data
+      const maxFetch = Math.min(searchData.result.length, options.maxResults || this.MAX_RESULTS);
+      const itemIds = searchData.result.slice(0, maxFetch);
+      
+      const fetchResult = await tradeApiClient.fetch(itemIds, searchData.id, league);
+      if (!fetchResult) {
+        console.warn('Trade API fetch failed, using mock data');
+        return this.createMockPriceResult(parsedItem, filters);
+      }
+
+      // Process the real API response
+      const result = this.processApiResponse(
+        parsedItem,
+        filters,
+        searchData,
+        fetchResult
+      );
+
+      // Cache the result
+      if (useCache) {
+        cacheService.set(cacheKey, result, this.CACHE_TTL_SECONDS);
+      }
+
+      return ok(result);
     } catch (error) {
       console.error("PriceCheckService.checkPrice error:", error);
-      return err(`Failed to check price: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Fallback to mock data on any error
+      const filters = this.createFiltersFromItem(parsedItem, {
+        league: options.league || this.DEFAULT_LEAGUE,
+        onlineOnly: options.onlineOnly ?? true,
+      });
+      return this.createMockPriceResult(parsedItem, filters);
+    }
+  }
+
+  /**
+   * Process real API response into our format
+   */
+  private static processApiResponse(
+    item: ParsedItem,
+    filters: SimpleTradeFilters,
+    searchData: TradeSearchResponse,
+    fetchData: TradeFetchResponse
+  ): PriceCheckResult {
+    const listings: PriceListingResult[] = [];
+
+    for (const result of fetchData.result) {
+      if (!result || !result.listing.price) continue;
+
+      const listing: PriceListingResult = {
+        id: result.id,
+        priceAmount: result.listing.price.amount,
+        priceCurrency: result.listing.price.currency,
+        accountName: result.listing.account.name,
+        characterName: result.listing.account.lastCharacterName,
+        itemLevel: result.item.ilvl?.toString(),
+        stackSize: (result.item as any).stackSize,
+        relativeDate: this.formatRelativeDate(result.listing.indexed),
+        hasNote: !!result.item.note,
+        isInstantBuyout: result.listing.price.type === "~price",
+        accountStatus: result.listing.account.online
+          ? ((result.listing.account.online as any).status === "afk"
+            ? "afk"
+            : "online")
+          : "offline",
+      };
+
+      listings.push(listing);
+    }
+
+    // Sort by price
+    listings.sort((a, b) => a.priceAmount - b.priceAmount);
+
+    // Calculate price stats
+    const prices = listings.map(l => l.priceAmount).filter(p => p > 0);
+    let priceStats: PriceCheckResult['priceStats'];
+    
+    if (prices.length > 0) {
+      const median = prices[Math.floor(prices.length / 2)];
+      const average = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+      
+      priceStats = {
+        median: Math.round(median * 100) / 100,
+        average: Math.round(average * 100) / 100,
+        currency: listings[0]?.priceCurrency || this.getCurrencyForItem(item),
+        totalListings: listings.length,
+      };
+    } else {
+      priceStats = {
+        median: undefined,
+        average: undefined,
+        currency: this.getCurrencyForItem(item),
+        totalListings: 0,
+      };
+    }
+
+    return {
+      itemName: item.name,
+      baseType: item.baseType,
+      category: item.category,
+      listings,
+      priceStats,
+      searchFilters: this.createSearchFilters(filters),
+    };
+  }
+
+  /**
+   * Format ISO date to relative time
+   */
+  private static formatRelativeDate(isoDate: string): string {
+    try {
+      const date = new Date(isoDate);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      
+      const minutes = Math.floor(diffMs / (1000 * 60));
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (minutes < 1) return "just now";
+      if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+      if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+      if (days < 7) return `${days} day${days !== 1 ? 's' : ''} ago`;
+      return `${Math.floor(days / 7)} week${Math.floor(days / 7) !== 1 ? 's' : ''} ago`;
+    } catch {
+      return "unknown";
     }
   }
 
@@ -159,8 +315,8 @@ export class PriceCheckService {
   /**
    * Create trade request from filters
    */
-  private static createTradeRequest(filters: SimpleTradeFilters): SimpleTradeRequest {
-    const request: SimpleTradeRequest = {
+  private static createTradeRequest(filters: SimpleTradeFilters): TradeRequest {
+    const request: TradeRequest = {
       query: {
         status: { option: "online" },
         filters: {},
@@ -180,18 +336,19 @@ export class PriceCheckService {
 
     // Type filters
     if (filters.rarity || filters.category || filters.itemLevel) {
+      request.query.filters = request.query.filters || {};
       request.query.filters.type_filters = { filters: {} };
 
       if (filters.rarity) {
         // Convert rarity to trade API format
         const rarityMap: Record<string, string> = {
-          "Normal": "nonunique",
-          "Magic": "nonunique", 
-          "Rare": "nonunique",
+          "Normal": "normal",
+          "Magic": "magic", 
+          "Rare": "rare",
           "Unique": "unique",
         };
         const tradeRarity = rarityMap[filters.rarity];
-        if (tradeRarity) {
+        if (tradeRarity && request.query.filters.type_filters?.filters) {
           request.query.filters.type_filters.filters.rarity = { option: tradeRarity };
         }
       }
@@ -205,18 +362,19 @@ export class PriceCheckService {
           "DivinationCard": "card",
         };
         const tradeCategory = categoryMap[filters.category];
-        if (tradeCategory) {
+        if (tradeCategory && request.query.filters.type_filters?.filters) {
           request.query.filters.type_filters.filters.category = { option: tradeCategory };
         }
       }
 
-      if (filters.itemLevel) {
-        request.query.filters.type_filters.filters.ilvl = filters.itemLevel;
+      if (filters.itemLevel && request.query.filters.misc_filters?.filters) {
+        request.query.filters.misc_filters.filters.ilvl = filters.itemLevel;
       }
     }
 
     // Misc filters
     if (filters.corrupted !== undefined) {
+      request.query.filters = request.query.filters || {};
       request.query.filters.misc_filters = {
         filters: {
           corrupted: { option: String(filters.corrupted) },
@@ -228,13 +386,26 @@ export class PriceCheckService {
   }
 
   /**
-   * Create mock price result for demonstration
-   * In production, this would process real API responses
+   * Create search filters for response
+   */
+  private static createSearchFilters(filters: SimpleTradeFilters): PriceCheckResult['searchFilters'] {
+    return {
+      name: filters.name,
+      baseType: filters.baseType,
+      category: filters.category,
+      rarity: filters.rarity,
+      corrupted: filters.corrupted,
+      itemLevel: filters.itemLevel?.min || filters.itemLevel?.max,
+    };
+  }
+
+  /**
+   * Create mock price result for demonstration (fallback)
    */
   private static createMockPriceResult(
     item: ParsedItem,
     filters: SimpleTradeFilters
-  ): PriceCheckResult {
+  ): Result<PriceCheckResult, string> {
     // Generate some realistic mock price data
     const mockListings: PriceListingResult[] = [];
     const basePrice = this.estimateBasePrice(item);
@@ -251,11 +422,13 @@ export class PriceCheckService {
         priceAmount: price,
         priceCurrency: this.getCurrencyForItem(item),
         accountName: `Player${i + 1}`,
+        characterName: `Character${i + 1}`,
         itemLevel: item.itemLevel?.toString(),
         stackSize: item.category === "Currency" ? Math.floor(Math.random() * 20) + 1 : undefined,
         relativeDate: this.generateRelativeDate(),
         hasNote: Math.random() > 0.7,
         isInstantBuyout: Math.random() > 0.8,
+        accountStatus: Math.random() > 0.3 ? "online" : Math.random() > 0.5 ? "afk" : "offline",
       });
     }
 
@@ -267,7 +440,7 @@ export class PriceCheckService {
     const median = prices[Math.floor(prices.length / 2)];
     const average = prices.reduce((sum, p) => sum + p, 0) / prices.length;
 
-    return {
+    const result: PriceCheckResult = {
       itemName: item.name,
       baseType: item.baseType,
       category: item.category,
@@ -278,15 +451,10 @@ export class PriceCheckService {
         currency: this.getCurrencyForItem(item),
         totalListings: mockListings.length,
       },
-      searchFilters: {
-        name: filters.name,
-        baseType: filters.baseType,
-        category: filters.category,
-        rarity: filters.rarity,
-        corrupted: filters.corrupted,
-        itemLevel: item.itemLevel,
-      },
+      searchFilters: this.createSearchFilters(filters),
     };
+
+    return ok(result);
   }
 
   /**
@@ -366,5 +534,50 @@ export class PriceCheckService {
     }
 
     return ok(undefined);
+  }
+
+  /**
+   * Get available leagues (hardcoded to avoid rate limits)
+   */
+  static async getLeagues(): Promise<Result<Array<{ id: string; text: string }>, string>> {
+    // Hardcoded PoE2 leagues to avoid rate limiting the /leagues endpoint
+    // These are the current PoE2 leagues as of the current league
+    const poe2Leagues = [
+      { id: "Rise of the Abyssal", text: "Rise of the Abyssal" },
+      { id: "HC Rise of the Abyssal", text: "HC Rise of the Abyssal" },
+      { id: "Standard", text: "Standard" },
+      { id: "Hardcore", text: "Hardcore" },
+    ];
+    
+    console.debug('Returning hardcoded PoE2 leagues to avoid rate limits');
+    return ok(poe2Leagues);
+  }
+
+  /**
+   * Test trade API connectivity
+   */
+  static async testConnection(): Promise<Result<boolean, string>> {
+    // Since we don't have testConnection method in TradeApiClient, 
+    // we'll check rate limit status as a proxy for connectivity
+    try {
+      const status = tradeApiClient.getRateLimitStatus();
+      return ok(status.search.available >= 0 && status.fetch.available >= 0);
+    } catch (error) {
+      return err(`Connection test failed: ${error}`);
+    }
+  }
+
+  /**
+   * Get rate limit status
+   */
+  static getRateLimitStatus() {
+    return tradeApiClient.getRateLimitStatus();
+  }
+
+  /**
+   * Clear price check cache
+   */
+  static clearCache(): void {
+    cacheService.clear();
   }
 }

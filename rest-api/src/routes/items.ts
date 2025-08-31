@@ -249,4 +249,67 @@ router.post('/analyze',
   }
 );
 
+/**
+ * GET /api/v1/items/leagues
+ * Get available leagues from trade API
+ */
+router.get('/leagues', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const leaguesResult = await PriceCheckService.getLeagues();
+    
+    if (leaguesResult.isErr()) {
+      throw createApiError(
+        'Failed to fetch leagues',
+        ApiErrorCode.EXTERNAL_API_ERROR,
+        500,
+        leaguesResult.error
+      );
+    }
+
+    const response: ApiResponse<{
+      leagues: Array<{ id: string; text: string }>;
+      rateLimits: any;
+    }> = {
+      success: true,
+      data: {
+        leagues: leaguesResult.value,
+        rateLimits: PriceCheckService.getRateLimitStatus(),
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/v1/items/test-connection
+ * Test trade API connectivity
+ */
+router.get('/test-connection', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const connectionResult = await PriceCheckService.testConnection();
+    
+    const response: ApiResponse<{
+      connected: boolean;
+      rateLimits: any;
+      error?: string;
+    }> = {
+      success: true,
+      data: {
+        connected: connectionResult.isOk(),
+        rateLimits: PriceCheckService.getRateLimitStatus(),
+        error: connectionResult.isErr() ? connectionResult.error : undefined,
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

@@ -47,7 +47,7 @@
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^2.1.8",
     "vitest-mock-extended": "^2.0.2",
-    "vue-tsc": "^2.0.0"
+    "vue-tsc": "^2.2.12"
   },
   "optionalDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.0.0",
