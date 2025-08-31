@@ -1,7 +1,7 @@
 import { err, ok, Result } from "neverthrow";
 import { ParseItemRequest, ApiErrorCode } from "../types/api";
 
-// Simplified ParsedItem interface for now
+// Simplified ParsedItem interface for the REST API
 export interface ParsedItem {
   name: string;
   baseType?: string;
@@ -10,7 +10,7 @@ export interface ParsedItem {
   isCorrupted: boolean;
   category?: string;
   rawText: string;
-  // Add more properties as needed
+  // Add more properties as needed for basic functionality
 }
 
 export class ItemService {
@@ -23,9 +23,11 @@ export class ItemService {
         return err("Item text is required");
       }
 
-      // For now, implement a basic parser
-      // TODO: Integrate with the shared parser once dependencies are resolved
-      const parsedItem = this.basicParse(request.itemText);
+      // Clean the item text before parsing
+      const cleanedText = this.cleanItemText(request.itemText);
+      
+      // For now, use our basic parser until the shared parser integration is complete
+      const parsedItem = this.basicParse(cleanedText);
       
       if (!parsedItem) {
         return err("Failed to parse item text");
@@ -64,7 +66,7 @@ export class ItemService {
   }
 
   /**
-   * Basic item parser for testing
+   * item parser
    */
   private static basicParse(itemText: string): ParsedItem | null {
     const lines = itemText.split('\n');
@@ -74,11 +76,11 @@ export class ItemService {
       return null;
     }
 
-    // Extract basic item info
     const headerLines = sections[0].trim().split('\n');
     let name = '';
     let baseType = '';
     let rarity = '';
+    let itemLevel: number | undefined;
 
     for (let i = 0; i < headerLines.length; i++) {
       const line = headerLines[i].trim();
@@ -93,11 +95,32 @@ export class ItemService {
       }
     }
 
+    for (const section of sections) {
+      const match = section.match(/Item Level: (\d+)/);
+      if (match) {
+        itemLevel = parseInt(match[1], 10);
+        break;
+      }
+    }
+
+    let category: string | undefined;
+    if (itemText.includes('Item Class: Currency')) {
+      category = 'Currency';
+    } else if (itemText.includes('Item Class: Divination Card')) {
+      category = 'DivinationCard';
+    } else if (itemText.includes('Item Class: Gem')) {
+      category = 'Gem';
+    } else if (itemText.includes('Item Class: Map')) {
+      category = 'Map';
+    }
+
     return {
       name: name || 'Unknown Item',
       baseType,
       rarity,
+      itemLevel,
       isCorrupted: itemText.includes('Corrupted'),
+      category,
       rawText: itemText
     };
   }

@@ -79,15 +79,82 @@ test_endpoint "POST" "$BASE_URL/api/v1/items/parse" "$SAMPLE_ITEM" '"name":"Doom
 test_endpoint "POST" "$BASE_URL/api/v1/items/price-check" "$SAMPLE_ITEM" '"success":true' "Price check"
 test_endpoint "POST" "$BASE_URL/api/v1/items/analyze" "$SAMPLE_ITEM" '"success":true' "Item analysis"
 
-echo -e "\n${YELLOW}🔍 Testing: Validation error handling${NC}"
-echo "URL: POST $BASE_URL/api/v1/items/parse"
-validation_response=$(curl -s -X POST -H "Content-Type: application/json" -d '{"itemText":""}' "$BASE_URL/api/v1/items/parse")
-echo "Response: $validation_response"
+# Enhanced Parser Tests
+echo -e "\n${YELLOW}🔍 Enhanced Parser Tests${NC}"
+echo "=================================="
 
-if echo "$validation_response" | grep -q '"success":false'; then
-    echo -e "${GREEN} PASS - Validation error handled correctly${NC}"
+# Test 1: Corrupted Rare Ring (current sample)
+echo -e "\n${YELLOW} Testing: Corrupted rare ring parsing${NC}"
+ring_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$SAMPLE_ITEM" "$BASE_URL/api/v1/items/parse")
+echo "Response: $ring_response"
+
+if echo "$ring_response" | grep -q '"name":"Doom Knot"' && 
+   echo "$ring_response" | grep -q '"baseType":"Steel Ring"' && 
+   echo "$ring_response" | grep -q '"rarity":"Rare"' && 
+   echo "$ring_response" | grep -q '"itemLevel":45' && 
+   echo "$ring_response" | grep -q '"isCorrupted":true'; then
+    echo -e "${GREEN} PASS - All ring properties parsed correctly${NC}"
 else
-    echo -e "${RED} FAIL - Validation error not handled${NC}"
+    echo -e "${RED} FAIL - Ring parsing incomplete${NC}"
+fi
+
+# Test 2: Normal weapon
+WEAPON_ITEM='{"itemText":"Rarity: Normal\nIron Sword\n--------\nOne Handed Swords\n--------\nPhysical Damage: 10-18\nCritical Strike Chance: 5.00%\nAttacks per Second: 1.30\nWeapon Range: 11\n--------\nRequirements:\nLevel: 5\nStr: 12\nDex: 12\n--------\nSockets: R-G \n--------\nItem Level: 15"}'
+
+echo -e "\n${YELLOW} Testing: Normal weapon parsing${NC}"
+weapon_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$WEAPON_ITEM" "$BASE_URL/api/v1/items/parse")
+echo "Response: $weapon_response"
+
+if echo "$weapon_response" | grep -q '"name":"Iron Sword"' && 
+   echo "$weapon_response" | grep -q '"rarity":"Normal"' && 
+   echo "$weapon_response" | grep -q '"itemLevel":15' && 
+   echo "$weapon_response" | grep -q '"isCorrupted":false'; then
+    echo -e "${GREEN} PASS - Normal weapon parsed correctly${NC}"
+else
+    echo -e "${RED} FAIL - Normal weapon parsing failed${NC}"
+fi
+
+# Test 3: Currency item
+CURRENCY_ITEM='{"itemText":"Rarity: Currency\nOrb of Fusing\n--------\nItem Class: Currency\n--------\nStack Size: 12/20\n--------\nReforges the links between sockets on an item\nRight click to use."}'
+
+echo -e "\n${YELLOW} Testing: Currency item parsing${NC}"
+currency_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$CURRENCY_ITEM" "$BASE_URL/api/v1/items/parse")
+echo "Response: $currency_response"
+
+if echo "$currency_response" | grep -q '"name":"Orb of Fusing"' && 
+   echo "$currency_response" | grep -q '"rarity":"Currency"' && 
+   echo "$currency_response" | grep -q '"category":"Currency"' && 
+   echo "$currency_response" | grep -q '"isCorrupted":false'; then
+    echo -e "${GREEN} PASS - Currency item parsed correctly${NC}"
+else
+    echo -e "${RED} FAIL - Currency item parsing failed${NC}"
+fi
+
+# Test 4: Gem
+GEM_ITEM='{"itemText":"Rarity: Gem\nFireball\n--------\nItem Class: Gem\n--------\nLevel: 5 (Max)\nMana Cost: 12\nCast Time: 0.85 sec\nCritical Strike Chance: 6.00%\nDamage Effectiveness: 100%\n--------\nRequirements:\nLevel: 12\nInt: 33\n--------\nLaunches a slow-moving projectile that pierces through enemies, dealing fire damage.\n--------\nDeals 31 to 47 Fire Damage\n25% chance to Ignite\n--------\nPlace into an item socket of the right colour to gain this skill."}'
+
+echo -e "\n${YELLOW} Testing: Gem parsing${NC}"
+gem_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$GEM_ITEM" "$BASE_URL/api/v1/items/parse")
+echo "Response: $gem_response"
+
+if echo "$gem_response" | grep -q '"name":"Fireball"' && 
+   echo "$gem_response" | grep -q '"rarity":"Gem"' && 
+   echo "$gem_response" | grep -q '"category":"Gem"'; then
+    echo -e "${GREEN} PASS - Gem parsed correctly${NC}"
+else
+    echo -e "${RED} FAIL - Gem parsing failed${NC}"
+fi
+
+# Test 5: Empty/Invalid item text
+echo -e "\n${YELLOW} Testing: Parser validation${NC}"
+empty_response=$(curl -s -X POST -H "Content-Type: application/json" -d '{"itemText":""}' "$BASE_URL/api/v1/items/parse")
+invalid_response=$(curl -s -X POST -H "Content-Type: application/json" -d '{"itemText":"Not a valid item"}' "$BASE_URL/api/v1/items/parse")
+
+if echo "$empty_response" | grep -q '"success":false' && 
+   echo "$invalid_response" | grep -q '"success":false'; then
+    echo -e "${GREEN} PASS - Parser validation working correctly${NC}"
+else
+    echo -e "${RED} FAIL - Parser validation not working${NC}"
 fi
 
 echo -e "\n${YELLOW} Testing: 404 error handling${NC}"
