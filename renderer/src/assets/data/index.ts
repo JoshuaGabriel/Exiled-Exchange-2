@@ -126,20 +126,45 @@ async function loadItems(language: string, isTest = false) {
     await fetch(`${import.meta.env.BASE_URL}data/${language}/items.ndjson`)
   ).text();
   const INDEX_WIDTH = 2;
-  const indexNames = new Uint32Array(
-    await (
-      await fetch(
-        `${import.meta.env.BASE_URL}data/${language}/items-name.index.bin`,
-      )
-    ).arrayBuffer(),
-  );
-  const indexRefNames = new Uint32Array(
-    await (
-      await fetch(
-        `${import.meta.env.BASE_URL}data/${language}/items-ref.index.bin`,
-      )
-    ).arrayBuffer(),
-  );
+  
+  let indexNames: Uint32Array;
+  let indexRefNames: Uint32Array;
+  
+  try {
+    const nameIndexResponse = await fetch(
+      `${import.meta.env.BASE_URL}data/${language}/items-name.index.bin`
+    );
+    const nameIndexBuffer = await nameIndexResponse.arrayBuffer();
+    
+    // Check if buffer length is valid for Uint32Array
+    if (nameIndexBuffer.byteLength % 4 !== 0) {
+      console.warn(`Invalid name index buffer length: ${nameIndexBuffer.byteLength}, falling back to empty array`);
+      indexNames = new Uint32Array(0);
+    } else {
+      indexNames = new Uint32Array(nameIndexBuffer);
+    }
+  } catch (error) {
+    console.warn('Failed to load name index, falling back to empty array:', error);
+    indexNames = new Uint32Array(0);
+  }
+  
+  try {
+    const refIndexResponse = await fetch(
+      `${import.meta.env.BASE_URL}data/${language}/items-ref.index.bin`
+    );
+    const refIndexBuffer = await refIndexResponse.arrayBuffer();
+    
+    // Check if buffer length is valid for Uint32Array
+    if (refIndexBuffer.byteLength % 4 !== 0) {
+      console.warn(`Invalid ref index buffer length: ${refIndexBuffer.byteLength}, falling back to empty array`);
+      indexRefNames = new Uint32Array(0);
+    } else {
+      indexRefNames = new Uint32Array(refIndexBuffer);
+    }
+  } catch (error) {
+    console.warn('Failed to load ref index, falling back to empty array:', error);
+    indexRefNames = new Uint32Array(0);
+  }
 
   function commonFind(index: Uint32Array, prop: "name" | "refName") {
     return function (
@@ -190,20 +215,43 @@ async function loadStats(language: string, isTest = false) {
     await fetch(`${import.meta.env.BASE_URL}data/${language}/stats.ndjson`)
   ).text();
   const INDEX_WIDTH = 2;
-  const indexRef = new Uint32Array(
-    await (
-      await fetch(
-        `${import.meta.env.BASE_URL}data/${language}/stats-ref.index.bin`,
-      )
-    ).arrayBuffer(),
-  );
-  const indexMatcher = new Uint32Array(
-    await (
-      await fetch(
-        `${import.meta.env.BASE_URL}data/${language}/stats-matcher.index.bin`,
-      )
-    ).arrayBuffer(),
-  );
+  
+  let indexRef: Uint32Array;
+  let indexMatcher: Uint32Array;
+  
+  try {
+    const statsRefResponse = await fetch(
+      `${import.meta.env.BASE_URL}data/${language}/stats-ref.index.bin`
+    );
+    const statsRefBuffer = await statsRefResponse.arrayBuffer();
+    
+    if (statsRefBuffer.byteLength % 4 !== 0) {
+      console.warn(`Invalid stats ref index buffer length: ${statsRefBuffer.byteLength}, falling back to empty array`);
+      indexRef = new Uint32Array(0);
+    } else {
+      indexRef = new Uint32Array(statsRefBuffer);
+    }
+  } catch (error) {
+    console.warn('Failed to load stats ref index, falling back to empty array:', error);
+    indexRef = new Uint32Array(0);
+  }
+  
+  try {
+    const statsMatcherResponse = await fetch(
+      `${import.meta.env.BASE_URL}data/${language}/stats-matcher.index.bin`
+    );
+    const statsMatcherBuffer = await statsMatcherResponse.arrayBuffer();
+    
+    if (statsMatcherBuffer.byteLength % 4 !== 0) {
+      console.warn(`Invalid stats matcher index buffer length: ${statsMatcherBuffer.byteLength}, falling back to empty array`);
+      indexMatcher = new Uint32Array(0);
+    } else {
+      indexMatcher = new Uint32Array(statsMatcherBuffer);
+    }
+  } catch (error) {
+    console.warn('Failed to load stats matcher index, falling back to empty array:', error);
+    indexMatcher = new Uint32Array(0);
+  }
 
   STAT_BY_REF = function (ref: string) {
     let start = dataBinarySearch(
