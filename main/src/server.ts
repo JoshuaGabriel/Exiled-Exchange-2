@@ -44,6 +44,31 @@ if (!process.env.VITE_DEV_SERVER_URL) {
 
     fs.createReadStream(path.join(__dirname, filePath)).pipe(res);
   });
+} else {
+  // In development, add CORS headers to all requests
+  server.addListener("request", (req, res) => {
+    if (
+      req.url?.startsWith("/config") ||
+      req.url?.startsWith("/uploads") ||
+      req.url?.startsWith("/proxy")
+    )
+      return;
+
+    // Add CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    
+    if (req.method === "OPTIONS") {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+
+    // For development, we don't serve static files - Vite handles that
+    res.writeHead(404);
+    res.end("Not found - use Vite dev server");
+  });
 }
 
 const evBus = new EventEmitter();
@@ -117,6 +142,20 @@ export async function startServer(
   });
 
   server.addListener("request", async (req, res) => {
+    // Add CORS headers for development
+    if (process.env.VITE_DEV_SERVER_URL) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      
+      // Handle preflight requests
+      if (req.method === "OPTIONS") {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+    }
+    
     if (req.url === "/config") {
       res.setHeader("content-type", "application/json");
       const resBody: HostState = {
