@@ -1,5 +1,6 @@
 import path from "path";
 import { BrowserWindow, dialog, shell, Menu } from "electron";
+import http from "http";
 import {
   OverlayController,
   OVERLAY_WINDOW_OPTS,
@@ -67,16 +68,47 @@ export class OverlayWindow {
     });
   }
 
-  loadAppPage(port: number) {
-    const url =
-      process.env.VITE_DEV_SERVER_URL || `http://localhost:${port}/index.html`;
+  async loadAppPage(port: number) {
+    // Try to detect if Vite dev server is running on common ports
+    const devPorts = [5173, 5174, 5175];
+    let devServerUrl = process.env.VITE_DEV_SERVER_URL;
+    
+    if (!devServerUrl) {
+      for (const devPort of devPorts) {
+        try {
+          const available = await new Promise<boolean>((resolve) => {
+            const req = http.request({
+              hostname: 'localhost',
+              port: devPort,
+              method: 'HEAD',
+              timeout: 1000
+            }, (res) => {
+              resolve(res.statusCode === 200);
+            });
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => resolve(false));
+            req.end();
+          });
+          
+          if (available) {
+            devServerUrl = `http://localhost:${devPort}`;
+            console.log(`Detected Vite dev server on port ${devPort}`);
+            break;
+          }
+        } catch {
+          // Port not available, try next
+        }
+      }
+    }
+
+    const url = devServerUrl || `http://localhost:${port}/index.html`;
 
     if (!this.window) {
       shell.openExternal(url);
       return;
     }
 
-    if (process.env.VITE_DEV_SERVER_URL) {
+    if (devServerUrl) {
       this.window.loadURL(url);
       this.window.webContents.openDevTools({ mode: "detach", activate: false });
     } else {
