@@ -98,6 +98,77 @@ else
     echo -e "${RED} FAIL - Ring parsing incomplete${NC}"
 fi
 
+# Enhanced Price Check Tests
+echo -e "\n${YELLOW}🔍 Enhanced Price Check Tests${NC}"
+echo "=================================="
+
+# Test 1: Price check for rare ring
+echo -e "\n${YELLOW} Testing: Price check for rare ring${NC}"
+price_check_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$SAMPLE_ITEM" "$BASE_URL/api/v1/items/price-check")
+echo "Response: $price_check_response"
+
+if echo "$price_check_response" | grep -q '"success":true' && 
+   echo "$price_check_response" | grep -q '"priceCheck"' && 
+   echo "$price_check_response" | grep -q '"listings"' && 
+   echo "$price_check_response" | grep -q '"priceStats"'; then
+    echo -e "${GREEN} PASS - Price check structure valid${NC}"
+else
+    echo -e "${RED} FAIL - Price check structure invalid${NC}"
+fi
+
+# Test 2: Price check for currency
+currency_item='{"itemText":"Rarity: Currency\nExalted Orb\n--------\nStack Size: 1\nCurrency\n--------\nAugments a rare item with a new random modifier"}'
+echo -e "\n${YELLOW} Testing: Price check for currency${NC}"
+currency_price_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$currency_item" "$BASE_URL/api/v1/items/price-check")
+echo "Response: $currency_price_response"
+
+if echo "$currency_price_response" | grep -q '"success":true' && 
+   echo "$currency_price_response" | grep -q '"name":"Exalted Orb"'; then
+    echo -e "${GREEN} PASS - Currency price check valid${NC}"
+else
+    echo -e "${RED} FAIL - Currency price check failed${NC}"
+fi
+
+# Test 3: Price check with league parameter
+league_data='{"itemText":"Rarity: Rare\nDoom Knot\nSteel Ring\n--------\nRequirements:\nLevel: 22\n--------\nItem Level: 45\n--------\n+16 to maximum Life\n+8% to all Elemental Resistances\n--------\nCorrupted","league":"Settlers","onlineOnly":false}'
+echo -e "\n${YELLOW} Testing: Price check with league parameter${NC}"
+league_price_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$league_data" "$BASE_URL/api/v1/items/price-check")
+echo "Response: $league_price_response"
+
+if echo "$league_price_response" | grep -q '"success":true'; then
+    echo -e "${GREEN} PASS - League parameter accepted${NC}"
+else
+    echo -e "${RED} FAIL - League parameter not handled${NC}"
+fi
+
+# Enhanced Analysis Tests
+echo -e "\n${YELLOW}🔍 Enhanced Analysis Tests${NC}"
+echo "=================================="
+
+# Test 1: Analysis with market data
+market_data='{"itemText":"Rarity: Rare\nDoom Knot\nSteel Ring\n--------\nRequirements:\nLevel: 22\n--------\nItem Level: 45\n--------\n+16 to maximum Life\n+8% to all Elemental Resistances\n--------\nCorrupted","includeMarketData":true}'
+echo -e "\n${YELLOW} Testing: Analysis with market data${NC}"
+analysis_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$market_data" "$BASE_URL/api/v1/items/analyze")
+echo "Response: $analysis_response"
+
+if echo "$analysis_response" | grep -q '"success":true' && 
+   echo "$analysis_response" | grep -q '"priceAnalysis"' && 
+   echo "$analysis_response" | grep -q '"recommendations"'; then
+    echo -e "${GREEN} PASS - Analysis with market data valid${NC}"
+else
+    echo -e "${RED} FAIL - Analysis with market data failed${NC}"
+fi
+
+# Test 2: Analysis with recommendations
+echo -e "\n${YELLOW} Testing: Analysis recommendations${NC}"
+if echo "$analysis_response" | grep -q '"quickSell"' && 
+   echo "$analysis_response" | grep -q '"fairPrice"' && 
+   echo "$analysis_response" | grep -q '"highPrice"'; then
+    echo -e "${GREEN} PASS - Price recommendations generated${NC}"
+else
+    echo -e "${RED} FAIL - Price recommendations missing${NC}"
+fi
+
 # Test 2: Normal weapon
 WEAPON_ITEM='{"itemText":"Rarity: Normal\nIron Sword\n--------\nOne Handed Swords\n--------\nPhysical Damage: 10-18\nCritical Strike Chance: 5.00%\nAttacks per Second: 1.30\nWeapon Range: 11\n--------\nRequirements:\nLevel: 5\nStr: 12\nDex: 12\n--------\nSockets: R-G \n--------\nItem Level: 15"}'
 

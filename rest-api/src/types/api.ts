@@ -19,6 +19,8 @@ export interface ParseItemRequest {
 export interface PriceCheckRequest {
   itemText: string;
   league?: string;
+  onlineOnly?: boolean;
+  maxResults?: number;
   options?: {
     includeListings?: boolean;
     includePrediction?: boolean;
@@ -46,6 +48,7 @@ export enum ApiErrorCode {
   ITEM_PARSE_ERROR = 'ITEM_PARSE_ERROR',
   PRICE_CHECK_ERROR = 'PRICE_CHECK_ERROR',
   TRADE_API_ERROR = 'TRADE_API_ERROR',
+  EXTERNAL_API_ERROR = 'EXTERNAL_API_ERROR',
   SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
   RATE_LIMITED = 'RATE_LIMITED',
   INTERNAL_ERROR = 'INTERNAL_ERROR'

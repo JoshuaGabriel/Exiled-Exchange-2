@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { ItemService, ParsedItem } from '../services/ItemService';
+import { PriceCheckService, PriceCheckResult } from '../services/PriceCheckService';
 import { 
   validateParseItem, 
   validatePriceCheck, 
@@ -106,26 +107,46 @@ router.post('/price-check',
       
       const parsedItem = parseResult.value;
       
-      // TODO: Implement price checking logic using shared trade modules
-      // For now, return the parsed item with placeholder price data
+      // Use PriceCheckService to get actual price data
+      const priceCheckOptions = {
+        league: request.league || 'Standard',
+        onlineOnly: request.onlineOnly ?? true,
+        maxResults: 50
+      };
+
+      // Validate that the item can be price checked
+      const validationResult = PriceCheckService.validatePriceCheckRequest(parsedItem);
+      if (validationResult.isErr()) {
+        throw createApiError(
+          'Item cannot be price checked',
+          ApiErrorCode.INVALID_REQUEST,
+          400,
+          validationResult.error
+        );
+      }
+
+      // Perform price check
+      const priceCheckResult = await PriceCheckService.checkPrice(parsedItem, priceCheckOptions);
+      
+      if (priceCheckResult.isErr()) {
+        throw createApiError(
+          'Price check failed',
+          ApiErrorCode.EXTERNAL_API_ERROR,
+          500,
+          priceCheckResult.error
+        );
+      }
+
+      const priceData = priceCheckResult.value;
       
       const response: ApiResponse<{
         item: ParsedItem;
-        listings?: any[];
-        prediction?: any;
-        summary?: any;
+        priceCheck: PriceCheckResult;
       }> = {
         success: true,
         data: {
           item: parsedItem,
-          listings: [], // TODO: Implement actual price checking
-          prediction: null, // TODO: Implement price prediction
-          summary: {
-            total: 0,
-            showing: 0,
-            averagePrice: null,
-            medianPrice: null
-          }
+          priceCheck: priceData
         },
         timestamp: new Date().toISOString()
       };
@@ -173,26 +194,50 @@ router.post('/analyze',
       
       const parsedItem = parseResult.value;
       
-      // TODO: Implement comprehensive analysis
-      // - Market data analysis
-      // - Similar items comparison
-      // - Price trends
-      // - Rarity assessment
+      // Perform comprehensive analysis including price checking
+      let priceData: PriceCheckResult | undefined;
+      
+      if (request.includeMarketData) {
+        const priceCheckOptions = {
+          league: request.league || 'Standard',
+          onlineOnly: true,
+          maxResults: 100
+        };
+
+        const priceCheckResult = await PriceCheckService.checkPrice(parsedItem, priceCheckOptions);
+        
+        if (priceCheckResult.isOk()) {
+          priceData = priceCheckResult.value;
+        }
+        // Don't fail the entire analysis if price check fails, just log and continue
+        else {
+          console.warn('Price check failed during analysis:', priceCheckResult.error);
+        }
+      }
       
       const response: ApiResponse<{
         item: ParsedItem;
+        priceAnalysis?: PriceCheckResult;
         marketData?: any;
         similarItems?: any[];
-        priceAnalysis?: any;
         recommendations?: any;
       }> = {
         success: true,
         data: {
           item: parsedItem,
-          marketData: request.includeMarketData ? {} : undefined, // TODO: Implement
-          similarItems: request.includeSimilarItems ? [] : undefined, // TODO: Implement
-          priceAnalysis: null, // TODO: Implement
-          recommendations: null // TODO: Implement
+          priceAnalysis: priceData,
+          marketData: request.includeMarketData ? {
+            totalListings: priceData?.listings.length || 0,
+            priceStats: priceData?.priceStats,
+            searchFilters: priceData?.searchFilters
+          } : undefined,
+          similarItems: request.includeSimilarItems ? [] : undefined, // TODO: Implement similar items search
+          recommendations: priceData && priceData.priceStats ? {
+            quickSell: priceData.priceStats.median ? Math.round(priceData.priceStats.median * 0.9 * 100) / 100 : null,
+            fairPrice: priceData.priceStats.median || null,
+            highPrice: priceData.priceStats.median ? Math.round(priceData.priceStats.median * 1.1 * 100) / 100 : null,
+            currency: priceData.priceStats.currency
+          } : null
         },
         timestamp: new Date().toISOString()
       };
