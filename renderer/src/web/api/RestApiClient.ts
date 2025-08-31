@@ -222,7 +222,7 @@ export class RestApiClient {
 
 // Default instance for the application
 export const restApiClient = new RestApiClient({
-  baseUrl: 'http://localhost:3000',
+  baseUrl: 'http://192.168.1.94:3000',
 });
 
 // Export function to update the base URL if needed

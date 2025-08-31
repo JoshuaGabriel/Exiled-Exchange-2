@@ -22,11 +22,22 @@ class HostTransport {
       this.updateInfo.value = info;
     });
     await new Promise((resolve) => {
-      this.socket = new Sockette(`ws://${window.location.host}/events`, {
+      // In development, the WebSocket server runs on port 8584, not the Vite dev server port
+      const wsHost = this.isElectron && import.meta.env.DEV 
+        ? 'localhost:8584' 
+        : window.location.host;
+      
+      this.socket = new Sockette(`ws://${wsHost}/events`, {
         onmessage: (e) => {
           this.selfDispatch(JSON.parse(e.data));
         },
         onopen: resolve,
+        onerror: (error) => {
+          console.error('WebSocket connection error:', error);
+        },
+        onclose: (event) => {
+          console.log('WebSocket connection closed:', event);
+        }
       });
     });
   }
@@ -63,7 +74,12 @@ class HostTransport {
   }
 
   async getConfig(): Promise<string | null> {
-    const response = await fetch("/config");
+    // In development, the config endpoint is on port 8584, not the Vite dev server port
+    const configHost = this.isElectron && import.meta.env.DEV 
+      ? 'localhost:8584' 
+      : window.location.host;
+    
+    const response = await fetch(`http://${configHost}/config`);
     const config = (await response.json()) as HostState;
     // TODO: refactor this
     this.version.value = config.version;
